@@ -32,6 +32,7 @@
 #'
 #' analyse_diabetes_demediation(separate = TRUE)(Design, dat)
 #' }
+
 analyse_diabetes_demediation <- function(separate = TRUE) {
   function(condition, dat, fixed_objects = NULL) {
     # Convert the logical of receiving rescue at any point in to a longitudinal measurement in wide format
