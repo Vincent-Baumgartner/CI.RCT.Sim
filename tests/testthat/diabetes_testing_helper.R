@@ -1,3 +1,4 @@
+rm(list = ls())
 devtools::load_all()
 
 generate_imp <- function(dat){
@@ -34,7 +35,7 @@ generate_example_data <- function(){
     diabetes_scenario_set_truevalues()
   data <- generate_diabetes(Design)
   imp_data <- generate_imp(data)
-  return(list(Design = Design, Data = data))
+  return(list(Design = Design, Data = data, imp_data = imp_data))
 }
 
 analysis_test <- function(dataa, indicator) {
@@ -143,3 +144,79 @@ analysis_test <- function(dataa, indicator) {
   )
 }
 
+test <- generate_example_data()
+d <- test$Data
+cond <- test$Design
+imp_d <- complete(test$imp_data, 1)
+
+
+ys_cols <- paste0("y", 0:cond$k)
+yc_cols <- paste0("yc", 1:cond$k)
+visits <- 0:cond$k
+R_cols <- paste0("R", visits)
+
+
+calculate_baseline_change <- function(data, yc_cols, ys){
+  for(i in seq_along(yc_cols)){
+    data[yc_cols[i]] <- data[, ys[i + 1]] - data[, ys[1]]
+  }
+  return(data)
+}
+
+
+completed_data <- lapply(seq_len(test$imp_data$m), function(i){
+  d <- calculate_baseline_change(mice::complete(test$imp_data, i), yc_cols, ys)
+  return(d)
+})
+
+
+
+completed_data <- lapply(seq_len(test$imp_data$m), function(i){
+  dat_comp <- calculate_baseline_change(mice::complete(test$imp_data, i), yc_cols, ys_cols)
+  Rmat <- as.matrix(dat_comp[R_cols])
+  rs <- dat_comp$rescue_start
+
+  # NA & visit < rescue_start -> 0
+  mask0 <- is.na(Rmat) & outer(rs, visits, `>`)
+
+  # NA & visit >= rescue_start -> 1
+  mask1 <- is.na(Rmat) & outer(rs, visits, `<=`)
+
+  Rmat[mask0] <- 0
+  Rmat[mask1] <- 1
+
+  dat_comp[R_cols] <- Rmat
+  return(as.matrix(dat_comp[cols]))
+})
+
+completed_data <- lapply(seq_len(test$imp_data$m), function(i){
+  dat_comp <- calculate_baseline_change(mice::complete(test$imp_data, i), yc_cols, ys_cols)
+  Rmat <- as.matrix(dat_comp[R_cols])
+  rs <- dat_comp$rescue_start
+
+  # NA & visit < rescue_start -> 0
+  mask0 <- is.na(Rmat) & outer(rs, visits, `>`)
+
+  # NA & visit >= rescue_start -> 1
+  mask1 <- is.na(Rmat) & outer(rs, visits, `<=`)
+
+  Rmat[mask0] <- 0
+  Rmat[mask1] <- 1
+
+  dat_comp[R_cols] <- Rmat
+  return(as.matrix(dat_comp[cols]))
+})
+cols <- c("trt", "age", ys_cols, R_cols, yc_cols)
+dat_comp <- completed_data[[1]]
+
+Rcols[11]
+
+visits
+cond$k
+
+M_idx <- function(v) match(v, cols)
+M_idx("R11")
+
+dat_comp <- cbind(dat_comp, j11 = dat_comp[, "yc12"])
+dat_comp
+colnames(dat_comp)
