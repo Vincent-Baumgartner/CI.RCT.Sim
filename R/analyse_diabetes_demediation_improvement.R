@@ -1,14 +1,14 @@
-analyse_diabetes_demediation <- function(separate = TRUE, B = 100){
+analyse_diabetes_demediation_fast <- function(separate = TRUE, B = 100){
   lf_fit <- utils::getFromNamespace("logistf.fit", "logistf")
   lf_ctrl <- logistf::logistf.control(maxit = 2000, maxstep = 0.5)
   function(condition, dat, fixed_objects = NULL){
 
     # Global Variables
     visits <- 0:condition$k
-    R_cols <- paste0("R", visits)
-    yc_cols <- paste0("yc", visits[-1])
-    ys_cols <- paste0("y", visits)
-    j_cols <- paste0("j", visits[-length(visits)])
+    R_cols <- paste0("R", visits) # idx 1 visit 0, idx 2 visit 1, ...
+    yc_cols <- paste0("yc", visits[-1]) # idx 1 visit 1, idx 2 visit 2, ...
+    ys_cols <- paste0("y", visits) # idx 1 visit 0, idx 2 visit 1, ...
+    j_cols <- paste0("j", visits[-length(visits)]) # idx 1 visit 0, ..., idx k visit k - 1
     cols <- c("trt", "age", ys_cols, R_cols, yc_cols)
     M_idx <- function(v) match(v, cols)
 
@@ -82,8 +82,6 @@ analyse_diabetes_demediation <- function(separate = TRUE, B = 100){
       J <- matrix(NA_real_, nrow = n, ncol = length(j_cols),
                   dimnames = list(NULL, j_cols))
 
-
-
       J[, j_cols[length(j_cols)]] <- dat_comp[, M_idx(yc_cols[length(yc_cols)])]
       for (k in rev(visits[-c(1, length(visits))])){
 
@@ -99,11 +97,9 @@ analyse_diabetes_demediation <- function(separate = TRUE, B = 100){
         }
 
         Xps <- cbind(1, dat_comp[, M_idx(c("trt", "age", paste0("y", 0:k)))])
-
         mod <- tryCatch(
           suppressWarnings(lf_fit(Xps, r_k, control = lf_ctrl)),
           error = function(e) {
-            print("Im here")
             tryCatch(suppressWarnings(glm.fit(Xps, r_k, family = binomial())),
                      error = function(e) NULL)
           }
@@ -127,7 +123,11 @@ analyse_diabetes_demediation <- function(separate = TRUE, B = 100){
 
       final.model <- lm(J[, "j0"] ~ dat_comp[, M_idx("trt")] + dat_comp[, M_idx("y0")])
       cf <- summary(final.model)$coefficients
-      c(p = cf[2, "Pr(>|t|)"], coef = cf[2, "Estimate"], se = cf[2, "Std. Error"])
+      c(
+        p = cf[2, "Pr(>|t|)"],
+        coef = cf[2, "Estimate"],
+        se = cf[2, "Std. Error"]
+        )
     }
 
     res  <- lapply(completed_data, analysis)
@@ -136,7 +136,8 @@ analyse_diabetes_demediation <- function(separate = TRUE, B = 100){
     variance <- function(bootdata){
       B <- bootdata$R
       mu <- mean(bootdata$t[, 2])
-      sum((bootdata$t[, 2] - mu)^2) / (B - 1)
+      var <- sum((bootdata$t[,2]-mu)^2)/(B-1)
+      var
     }
 
     effs <- unlist(lapply(res, function(x) x["coef"]))
@@ -144,15 +145,22 @@ analyse_diabetes_demediation <- function(separate = TRUE, B = 100){
 
     end_res <- pool.scalar(effs, var)
     crit <- qt(0.975, df = end_res$df)
+    ci <- c(
+      end_res$qbar - crit*sqrt(end_res$t),
+      end_res$qbar + crit*sqrt(end_res$t)
+    )
+
     t_stat <- end_res$qbar / sqrt(end_res$t)
+    p_onesided <- pt(t_stat, df = end_res$df)
+    p_pool <- 2 * pt(-abs(t_stat), df = end_res$df)
 
     list(
-      coef      = end_res$qbar,
-      p         = pt(t_stat, df = end_res$df),
-      se        = sqrt(end_res$t),
-      ci_lower  = end_res$qbar - crit * sqrt(end_res$t),
-      ci_upper  = end_res$qbar + crit * sqrt(end_res$t),
-      two_sided = 2 * pt(-abs(t_stat), df = end_res$df)
+      coef = end_res$qbar,
+      p = p_onesided,
+      se = sqrt(end_res$t),
+      ci_lower = ci[1],
+      ci_upper = ci[2],
+      two_sided = p_pool
     )
   }
 }
